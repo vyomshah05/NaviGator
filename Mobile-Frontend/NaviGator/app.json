@@ -10,8 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.navigators.navigator",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "bundleIdentifier": "com.navigators.navigator"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,17 +21,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.navigators.navigator",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.navigators.navigator"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "@react-native-firebase/app",
-      "@react-native-firebase/auth",
-      "@react-native-firebase/firestore",
       "expo-router",
       [
         "expo-splash-screen",
