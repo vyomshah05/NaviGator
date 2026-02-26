@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import requests
@@ -6,7 +6,14 @@ import requests.exceptions
 import math
 import os
 from dotenv import load_dotenv
-
+from pydantic import BaseModel
+from auth_middleware import get_current_user
+from firebase_admin_config import (
+    get_user_preferences, 
+    save_user_preferences,
+    save_activity_rating,
+    get_activity_history
+)
 load_dotenv()
 
 app = FastAPI(title="NaviGator API")
@@ -488,3 +495,116 @@ def geocode(city: str, state: str):
     """Converts city+state to coordinates. Used when GPS is unavailable."""
     lat, lon = get_coordinates(city, state)
     return {"lat": lat, "lon": lon}
+
+class UserPreferences(BaseModel):
+    activity_types: list[str]
+    max_distance: int
+    budget: str
+    weights: dict
+
+class ActivityRating(BaseModel):
+    fsq_id: str
+    name: str
+    rating: int
+    activity_type: str
+    distance: float
+    weather_condition: str
+
+@app.post("/api/user/preferences")
+async def save_preferences(
+    preferences: UserPreferences,
+    user_id: str = Depends(get_current_user)
+):
+    """Save user preferences after onboarding survey"""
+    save_user_preferences(user_id, preferences.dict())
+    return {"message": "Preferences saved successfully"}
+
+@app.get("/api/user/preferences")
+async def get_preferences(user_id: str = Depends(get_current_user)):
+    """Get user preferences"""
+    prefs = get_user_preferences(user_id)
+    if not prefs:
+        raise HTTPException(status_code=404, detail="User preferences not found")
+    return prefs
+
+@app.post("/api/user/activity/rate")
+async def rate_activity(
+    rating_data: ActivityRating,
+    user_id: str = Depends(get_current_user)
+):
+    """Save activity rating"""
+    save_activity_rating(user_id, rating_data.dict())
+    return {"message": "Rating saved successfully"}
+
+@app.get("/api/user/activity/history")
+async def get_history(user_id: str = Depends(get_current_user)):
+    """Get user's activity history"""
+    history = get_activity_history(user_id)
+    return {"count": len(history), "activities": history}
+
+@app.get("/api/recommendations/personalized")
+async def get_personalized_recommendations(
+    lat: float,
+    lon: float,
+    top_k: int = 5,
+    user_id: str = Depends(get_current_user)
+):
+    """Get recommendations using user's stored preferences from Firebase"""
+    
+    # Get user preferences from Firestore
+    user_prefs = get_user_preferences(user_id)
+    
+    if not user_prefs:
+        raise HTTPException(
+            status_code=404, 
+            detail="User preferences not found. Complete onboarding first."
+        )
+    
+    # Extract preferences
+    activity_types = user_prefs.get("activity_types", [])
+    max_distance = user_prefs.get("max_distance", 5000)
+    budget = user_prefs.get("budget")
+    weights = user_prefs.get("weights", {
+        "distance": 0.25,
+        "weather": 0.25,
+        "rating": 0.25,
+        "category_match": 0.25,
+    })
+    
+    # Build category IDs
+    if activity_types:
+        cat_ids = [
+            PREFERENCE_CATEGORIES[t]
+            for t in activity_types
+            if t in PREFERENCE_CATEGORIES
+        ]
+    else:
+        cat_ids = list(PREFERENCE_CATEGORIES.values())
+    
+    # Fetch weather and places
+    weather = get_weather(lat, lon)
+    places = search_places(lat, lon, cat_ids, radius=max_distance, limit=10)
+    
+    # Rank using stored preferences
+    ranked = rank_places(
+        places, 
+        {
+            "activity_types": activity_types,
+            "max_distance": max_distance,
+            "budget": budget,
+            "weights": weights
+        }, 
+        weather, 
+        top_k=top_k
+    )
+    
+    # Add explanations
+    for place in ranked:
+        place["explanation"] = build_explanation(place, weather)
+    
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "weather": weather,
+        "count": len(ranked),
+        "results": ranked,
+    }
