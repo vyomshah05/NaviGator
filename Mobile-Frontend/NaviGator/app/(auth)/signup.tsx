@@ -10,8 +10,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { authService } from "../../services/auth";
+import { apiService } from "../../services/api";
 
 // ─── Color Tokens ───────────────────────────────────────────────
 const COLORS = {
@@ -53,11 +57,11 @@ const ACTIVITY_PREFERENCES = [
 ];
 
 const NIGHTLIFE_PREFERENCES = [
-  { id: "clubs", label: "Clubs" },
-  { id: "bars", label: "Bars" },
-  { id: "lounges", label: "Lounges" },
-  { id: "liveMusic", label: "Live Music" },
-  { id: "karaoke", label: "Karaoke" },
+  { id: "clubs", label: "Clubs" }, 
+  { id: "bars", label: "Bars" }, 
+  { id: "lounges", label: "Lounges" }, 
+  { id: "liveMusic", label: "Live Music" }, 
+  { id: "karaoke", label: "Karaoke" }, 
   { id: "rooftop", label: "Rooftop" },
 ];
 
@@ -126,6 +130,7 @@ export default function SignupScreen() {
   const router = useRouter();
 
   const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Account fields
@@ -138,7 +143,7 @@ export default function SignupScreen() {
   const [foodPrefs, setFoodPrefs] = useState<string[]>([]);
   const [activityPrefs, setActivityPrefs] = useState<string[]>([]);
   const [nightlifePrefs, setNightlifePrefs] = useState<string[]>([]);
-  const [budgetPref, setBudgetPref] = useState<string>("");
+  const [budgetPref, setBudgetPref] = useState<string>("moderate");
 
   const totalSteps = 5;
 
@@ -166,20 +171,46 @@ export default function SignupScreen() {
     if (step > 0) animateTransition(step - 1);
   };
 
-  const handleComplete = () => {
-    // TODO: send to backend / persist prefs
-    console.log("Signup complete!", {
-      firstName,
-      lastName,
-      email,
-      foodPrefs,
-      activityPrefs,
-      nightlifePrefs,
-      budgetPref,
-    });
+  const handleComplete = async () => {
+    setLoading(true);
 
-    // Route into your tabs (Home/Explore)
-    router.replace("/(tabs)");
+    try {
+      // Step 1: Create Firebase Auth account
+      console.log("Creating Firebase account...");
+      const user = await authService.signup({
+        firstName,
+        lastName,
+        email,
+        password,
+      });
+
+      console.log("✅ Firebase account created:", user.uid);
+
+      // Step 2: Save preferences to backend (which saves to Firestore)
+      console.log("Saving preferences to backend...");
+      await apiService.saveOnboardingPreferences({
+        firstName,
+        lastName,
+        foodPrefs,
+        activityPrefs,
+        nightlifePrefs,
+        budgetPref,
+      });
+
+      console.log("✅ Preferences saved successfully");
+
+      // Step 3: Navigate to home
+      router.replace("/(tabs)");
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      Alert.alert(
+        "Signup Failed",
+        error.message || "Something went wrong. Please try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Step 0
@@ -201,8 +232,11 @@ export default function SignupScreen() {
         <Text style={styles.primaryButtonText}>Get Started</Text>
       </TouchableOpacity>
 
-      {/* You can later route to a sign-in screen */}
-      <TouchableOpacity style={styles.textButton} activeOpacity={0.6}>
+      <TouchableOpacity 
+        style={styles.textButton} 
+        activeOpacity={0.6}
+        onPress={() => router.push("/(auth)/signin")}
+      >
         <Text style={styles.textButtonLabel}>
           Already have an account? <Text style={styles.textButtonAccent}>Sign In</Text>
         </Text>
@@ -266,7 +300,7 @@ export default function SignupScreen() {
           style={styles.input}
           value={password}
           onChangeText={setPassword}
-          placeholder="At least 8 characters"
+          placeholder="At least 6 characters"
           placeholderTextColor={COLORS.muted}
           secureTextEntry
         />
@@ -358,8 +392,17 @@ export default function SignupScreen() {
       <Text style={styles.completeDescription}>
         We'll use your preferences to curate personalized plans near you.
       </Text>
-      <TouchableOpacity style={styles.primaryButton} onPress={handleComplete} activeOpacity={0.8}>
-        <Text style={styles.primaryButtonText}>Start Exploring</Text>
+      <TouchableOpacity 
+        style={[styles.primaryButton, loading && styles.buttonDisabled]} 
+        onPress={handleComplete} 
+        activeOpacity={0.8}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryButtonText}>Start Exploring</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -382,7 +425,7 @@ export default function SignupScreen() {
   };
 
   const showHeaderFooter = step > 0 && step < 4;
-  const accountInvalid = step === 1 && (!firstName || !email || !password);
+  const accountInvalid = step === 1 && (!firstName || !email || password.length < 6);
 
   return (
     <KeyboardAvoidingView
@@ -423,6 +466,7 @@ export default function SignupScreen() {
   );
 }
 
+// ... (Keep all the existing styles - no changes needed)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   content: { flex: 1 },

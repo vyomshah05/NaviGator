@@ -16,6 +16,13 @@ from firebase_admin_config import (
 )
 load_dotenv()
 
+class UserPreferences(BaseModel):
+    activity_types: list[str]
+    max_distance: int
+    budget: str
+    weights: dict
+
+
 app = FastAPI(title="NaviGator API")
 
 app.add_middleware(
@@ -495,12 +502,6 @@ def geocode(city: str, state: str):
     """Converts city+state to coordinates. Used when GPS is unavailable."""
     lat, lon = get_coordinates(city, state)
     return {"lat": lat, "lon": lon}
-
-class UserPreferences(BaseModel):
-    activity_types: list[str]
-    max_distance: int
-    budget: str
-    weights: dict
 
 class ActivityRating(BaseModel):
     fsq_id: str

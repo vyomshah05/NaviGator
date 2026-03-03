@@ -66,6 +66,15 @@ export interface Recommendation {
   }>;
 }
 
+export interface OnboardingPreferences {
+  firstName: string;
+  lastName: string;
+  foodPrefs: string[];
+  activityPrefs: string[];
+  nightlifePrefs: string[];
+  budgetPref: string;
+}
+
 // API functions
 export const apiService = {
   // Preferences
@@ -109,6 +118,29 @@ export const apiService = {
     const response = await api.get('/api/weather', {
       params: { lat, lon }
     });
+    return response.data;
+  },
+
+  async saveOnboardingPreferences(prefs: OnboardingPreferences) {
+    // Map frontend preferences to backend format
+    const backendPrefs: UserPreferences = {
+      activity_types: [
+        ...prefs.activityPrefs,
+        ...prefs.nightlifePrefs,
+        // Map food to 'food' activity type
+        ...(prefs.foodPrefs.length > 0 ? ['food'] : []),
+      ],
+      max_distance: 5000, // Default 5km
+      budget: prefs.budgetPref,
+      weights: {
+        distance: 0.25,
+        weather: 0.25,
+        rating: 0.25,
+        category_match: 0.25,
+      },
+    };
+
+    const response = await api.post('/api/user/preferences', backendPrefs);
     return response.data;
   },
 };
