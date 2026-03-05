@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Dimensions,
-  Animated,
   StatusBar,
-  FlatList,
+  ActivityIndicator,
 } from "react-native";
-
-const { width } = Dimensions.get("window");
+import * as Location from "expo-location";
+import { auth } from "../../firebaseConfig";
+import { apiService, Recommendation } from "../../services/api";
 
 // ─── Color Tokens ───────────────────────────────────────────────
 const COLORS = {
@@ -30,153 +29,59 @@ const COLORS = {
 // ─── Category Filters ───────────────────────────────────────────
 const CATEGORIES = [
   { id: "all", label: "For You" },
-  { id: "events", label: "Events" },
   { id: "food", label: "Restaurants" },
   { id: "nightlife", label: "Nightlife" },
   { id: "outdoors", label: "Outdoors" },
+  { id: "arts", label: "Arts" },
 ];
 
-// ─── Mock Data ──────────────────────────────────────────────────
-const FEATURED_PLANS = [
-  {
-    id: "1",
-    title: "Saturday Night Out",
-    subtitle: "Dinner, comedy show, and cocktails",
-    time: "6:00 PM - 12:00 AM",
-    spots: 3,
-    color: "#1A8C51",
-  },
-  {
-    id: "2",
-    title: "Foodie Adventure",
-    subtitle: "3 cuisines, 1 amazing day",
-    time: "11:00 AM - 8:00 PM",
-    spots: 4,
-    color: "#FF9F00",
-  },
-  {
-    id: "3",
-    title: "Culture Crawl",
-    subtitle: "Museums, galleries, and live music",
-    time: "10:00 AM - 9:00 PM",
-    spots: 5,
-    color: "#2D6BC4",
-  },
-];
+// ─── Helpers ────────────────────────────────────────────────────
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning,";
+  if (hour < 17) return "Good afternoon,";
+  return "Good evening,";
+}
 
-const NEARBY_EVENTS = [
-  {
-    id: "e1",
-    name: "Jazz at the Park",
-    venue: "Central Park Bandshell",
-    distance: "0.4 mi",
-    time: "Today, 7 PM",
-    category: "events",
-    rating: 4.8,
-    price: "Free",
-    imageColor: "#2D6BC4",
-  },
-  {
-    id: "e2",
-    name: "Taco Festival",
-    venue: "Riverside Plaza",
-    distance: "1.2 mi",
-    time: "Tomorrow, 11 AM",
-    category: "food",
-    rating: 4.6,
-    price: "$15",
-    imageColor: "#FF9F00",
-  },
-  {
-    id: "e3",
-    name: "Rooftop Lounge Night",
-    venue: "Skyline Terrace",
-    distance: "0.8 mi",
-    time: "Fri, 9 PM",
-    category: "nightlife",
-    rating: 4.9,
-    price: "$25",
-    imageColor: "#9B59B6",
-  },
-  {
-    id: "e4",
-    name: "Sunrise Yoga",
-    venue: "Lake Shore Trail",
-    distance: "2.1 mi",
-    time: "Sat, 6:30 AM",
-    category: "outdoors",
-    rating: 4.7,
-    price: "$10",
-    imageColor: "#1A8C51",
-  },
-];
+function metersToMiles(meters: number): string {
+  return (meters / 1609.34).toFixed(1) + " mi";
+}
 
-const RESTAURANT_PICKS = [
-  {
-    id: "r1",
-    name: "Sakura Sushi Bar",
-    cuisine: "Japanese",
-    rating: 4.8,
-    priceLevel: "$$$",
-    distance: "0.3 mi",
-    openNow: true,
-    imageColor: "#E74C3C",
-  },
-  {
-    id: "r2",
-    name: "Bella Trattoria",
-    cuisine: "Italian",
-    rating: 4.6,
-    priceLevel: "$$",
-    distance: "0.7 mi",
-    openNow: true,
-    imageColor: "#27AE60",
-  },
-  {
-    id: "r3",
-    name: "Spice Route",
-    cuisine: "Indian",
-    rating: 4.5,
-    priceLevel: "$$",
-    distance: "1.0 mi",
-    openNow: false,
-    imageColor: "#F39C12",
-  },
-];
+// Map Foursquare category name to a UI category id
+function mapToUiCategory(categoryName: string): string {
+  const lower = categoryName.toLowerCase();
+  if (lower.includes("restaurant") || lower.includes("food") || lower.includes("cafe") || lower.includes("coffee") || lower.includes("bakery") || lower.includes("pizza") || lower.includes("sushi") || lower.includes("taco") || lower.includes("burger")) return "food";
+  if (lower.includes("bar") || lower.includes("club") || lower.includes("lounge") || lower.includes("nightlife") || lower.includes("cocktail") || lower.includes("brewery") || lower.includes("karaoke")) return "nightlife";
+  if (lower.includes("park") || lower.includes("trail") || lower.includes("outdoor") || lower.includes("garden") || lower.includes("nature") || lower.includes("beach") || lower.includes("lake") || lower.includes("yoga")) return "outdoors";
+  if (lower.includes("museum") || lower.includes("gallery") || lower.includes("theater") || lower.includes("theatre") || lower.includes("art") || lower.includes("concert") || lower.includes("music")) return "arts";
+  return "all";
+}
 
-// ─── Featured Plan Card ────────────────────────────────────────
-function FeaturedPlanCard({ plan }: { plan: (typeof FEATURED_PLANS)[number] }) {
-  return (
-    <TouchableOpacity
-      style={[styles.featuredCard, { backgroundColor: plan.color }]}
-      activeOpacity={0.85}
-    >
-      <View style={styles.featuredBadge}>
-        <Text style={styles.featuredBadgeText}>AI Plan</Text>
-      </View>
-      <View style={styles.featuredContent}>
-        <Text style={styles.featuredTitle}>{plan.title}</Text>
-        <Text style={styles.featuredSubtitle}>{plan.subtitle}</Text>
-        <View style={styles.featuredMeta}>
-          <View style={styles.featuredMetaItem}>
-            <Text style={styles.featuredMetaIcon}>C</Text>
-            <Text style={styles.featuredMetaText}>{plan.time}</Text>
-          </View>
-          <View style={styles.featuredMetaItem}>
-            <Text style={styles.featuredMetaIcon}>P</Text>
-            <Text style={styles.featuredMetaText}>{plan.spots} stops</Text>
-          </View>
-        </View>
-      </View>
-      <TouchableOpacity style={styles.featuredAction} activeOpacity={0.7}>
-        <Text style={styles.featuredActionText}>View Plan</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+// Pick a color based on category
+function categoryColor(categoryName: string): string {
+  const cat = mapToUiCategory(categoryName);
+  switch (cat) {
+    case "food": return "#FF9F00";
+    case "nightlife": return "#9B59B6";
+    case "outdoors": return "#1A8C51";
+    case "arts": return "#2D6BC4";
+    default: return "#E74C3C";
+  }
 }
 
 // ─── Event Card ─────────────────────────────────────────────────
-function EventCard({ event }: { event: (typeof NEARBY_EVENTS)[number] }) {
+interface EventItem {
+  id: string;
+  name: string;
+  venue: string;
+  distance: string;
+  category: string;
+  rating: string;
+  explanation: string;
+  imageColor: string;
+}
+
+function EventCard({ event }: { event: EventItem }) {
   return (
     <TouchableOpacity style={styles.eventCard} activeOpacity={0.8}>
       <View style={[styles.eventImage, { backgroundColor: event.imageColor }]}>
@@ -187,19 +92,23 @@ function EventCard({ event }: { event: (typeof NEARBY_EVENTS)[number] }) {
           <Text style={styles.eventName} numberOfLines={1}>
             {event.name}
           </Text>
-          <View style={styles.ratingBadge}>
-            <Text style={styles.ratingText}>{event.rating}</Text>
-          </View>
+          {event.rating !== "N/A" && (
+            <View style={styles.ratingBadge}>
+              <Text style={styles.ratingText}>{event.rating}</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.eventVenue} numberOfLines={1}>
           {event.venue}
         </Text>
         <View style={styles.eventMeta}>
-          <Text style={styles.eventTime}>{event.time}</Text>
-          <Text style={styles.eventDot}>-</Text>
           <Text style={styles.eventDistance}>{event.distance}</Text>
-          <Text style={styles.eventDot}>-</Text>
-          <Text style={styles.eventPrice}>{event.price}</Text>
+          {event.explanation ? (
+            <>
+              <Text style={styles.eventDot}>·</Text>
+              <Text style={styles.eventExplanation} numberOfLines={1}>{event.explanation}</Text>
+            </>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -207,49 +116,107 @@ function EventCard({ event }: { event: (typeof NEARBY_EVENTS)[number] }) {
 }
 
 // ─── Restaurant Card ────────────────────────────────────────────
-function RestaurantCard({
-  restaurant,
-}: {
-  restaurant: (typeof RESTAURANT_PICKS)[number];
-}) {
+function RestaurantCard({ item }: { item: EventItem }) {
   return (
     <TouchableOpacity style={styles.restaurantCard} activeOpacity={0.8}>
-      <View
-        style={[styles.restaurantImage, { backgroundColor: restaurant.imageColor }]}
-      >
-        <Text style={styles.restaurantImageText}>{restaurant.name.charAt(0)}</Text>
+      <View style={[styles.restaurantImage, { backgroundColor: item.imageColor }]}>
+        <Text style={styles.restaurantImageText}>{item.name.charAt(0)}</Text>
       </View>
       <Text style={styles.restaurantName} numberOfLines={1}>
-        {restaurant.name}
+        {item.name}
       </Text>
-      <Text style={styles.restaurantCuisine}>{restaurant.cuisine}</Text>
+      <Text style={styles.restaurantCuisine} numberOfLines={1}>{item.venue}</Text>
       <View style={styles.restaurantMeta}>
-        <Text style={styles.restaurantRating}>{restaurant.rating}</Text>
-        <Text style={styles.restaurantPrice}>{restaurant.priceLevel}</Text>
-      </View>
-      <View style={styles.restaurantStatus}>
-        <View
-          style={[
-            styles.statusDot,
-            { backgroundColor: restaurant.openNow ? COLORS.primary : "#E74C3C" },
-          ]}
-        />
-        <Text style={styles.statusText}>{restaurant.openNow ? "Open Now" : "Closed"}</Text>
+        <Text style={styles.restaurantRating}>{item.rating !== "N/A" ? item.rating : ""}</Text>
+        <Text style={styles.restaurantPrice}>{item.distance}</Text>
       </View>
     </TouchableOpacity>
   );
+}
+
+// ─── Map Recommendation to EventItem ───────────────────────────
+function toEventItem(rec: Recommendation): EventItem {
+  const catName = rec.categories?.[0]?.name ?? "";
+  const venueCity = rec.location?.locality ?? rec.location?.address ?? "";
+  const ratingDisplay = rec.rating > 0 ? (rec.rating / 2).toFixed(1) : "N/A";
+  return {
+    id: rec.fsq_id,
+    name: rec.name,
+    venue: venueCity || catName,
+    distance: metersToMiles(rec.distance),
+    category: mapToUiCategory(catName),
+    rating: ratingDisplay,
+    explanation: rec.explanation ?? "",
+    imageColor: categoryColor(catName),
+  };
 }
 
 // ─── Main Home Component ────────────────────────────────────────
 export default function HomeScreen() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const [recommendations, setRecommendations] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [locationName, setLocationName] = useState("Getting location...");
+  const [userName, setUserName] = useState("there");
 
-  const filteredEvents =
-    activeCategory === "all"
-      ? NEARBY_EVENTS
-      : NEARBY_EVENTS.filter((e) => e.category === activeCategory);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Get user name
+      const user = auth.currentUser;
+      if (user?.displayName) {
+        setUserName(user.displayName.split(" ")[0]);
+      }
+
+      // Get location permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let lat = 29.6516; // Gainesville, FL fallback
+      let lon = -82.3248;
+
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = loc.coords.latitude;
+        lon = loc.coords.longitude;
+
+        // Reverse geocode for display
+        const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        if (place) {
+          const parts = [place.district ?? place.subregion, place.city].filter(Boolean);
+          setLocationName(parts.join(", ") || "Your Location");
+        }
+      } else {
+        setLocationName("Gainesville, FL");
+      }
+
+      // Fetch personalized recommendations
+      const data = await apiService.getRecommendations(lat, lon, 20);
+      const items: EventItem[] = (data.results ?? data.recommendations ?? []).map(toEventItem);
+      setRecommendations(items);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load recommendations");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Filter by category and search
+  const filtered = recommendations.filter((item) => {
+    const matchesCategory = activeCategory === "all" || item.category === activeCategory;
+    const matchesSearch =
+      searchQuery.length === 0 ||
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.venue.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  const restaurantItems = recommendations.filter((r) => r.category === "food");
 
   return (
     <View style={styles.container}>
@@ -263,31 +230,30 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Good evening,</Text>
-            <Text style={styles.userName}>Jane</Text>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.userName}>{userName}</Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.notificationBtn} activeOpacity={0.7}>
-              <Text style={styles.notificationIcon}>B</Text>
-              <View style={styles.notificationDot} />
+            <TouchableOpacity style={styles.notificationBtn} activeOpacity={0.7} onPress={fetchData}>
+              <Text style={styles.notificationIcon}>↻</Text>
             </TouchableOpacity>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>J</Text>
+              <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
             </View>
           </View>
         </View>
 
         {/* Location Bar */}
-        <TouchableOpacity style={styles.locationBar} activeOpacity={0.7}>
-          <Text style={styles.locationIcon}>L</Text>
-          <Text style={styles.locationText}>Downtown, Gainesville</Text>
+        <TouchableOpacity style={styles.locationBar} activeOpacity={0.7} onPress={fetchData}>
+          <Text style={styles.locationIcon}>◎</Text>
+          <Text style={styles.locationText}>{locationName}</Text>
           <Text style={styles.locationChevron}>{">"}</Text>
         </TouchableOpacity>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
           <View style={styles.searchIcon}>
-            <Text style={styles.searchIconText}>S</Text>
+            <Text style={styles.searchIconText}>⌕</Text>
           </View>
           <TextInput
             style={styles.searchInput}
@@ -298,7 +264,7 @@ export default function HomeScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Text style={styles.clearText}>X</Text>
+              <Text style={styles.clearText}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -326,71 +292,75 @@ export default function HomeScreen() {
           })}
         </ScrollView>
 
-        {/* AI-Curated Plans */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>AI-Curated Plans</Text>
-            <TouchableOpacity activeOpacity={0.6}>
-              <Text style={styles.seeAll}>See All</Text>
+        {/* Loading / Error States */}
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.stateText}>Finding places near you...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerState}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={fetchData} activeOpacity={0.8}>
+              <Text style={styles.retryText}>Try Again</Text>
             </TouchableOpacity>
           </View>
-          <FlatList
-            data={FEATURED_PLANS}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            renderItem={({ item }) => <FeaturedPlanCard plan={item} />}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.featuredScroll}
-            snapToInterval={width * 0.78 + 16}
-            decelerationRate="fast"
-          />
-        </View>
+        ) : (
+          <>
+            {/* Nearby Recommendations */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>
+                  {activeCategory === "all" ? "Recommended For You" : CATEGORIES.find(c => c.id === activeCategory)?.label}
+                </Text>
+                <Text style={styles.countText}>{filtered.length} places</Text>
+              </View>
+              {filtered.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>No places found for this filter.</Text>
+                </View>
+              ) : (
+                filtered.map((item) => <EventCard key={item.id} event={item} />)
+              )}
+            </View>
 
-        {/* Nearby Events */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Nearby Events</Text>
-            <TouchableOpacity activeOpacity={0.6}>
-              <Text style={styles.seeAll}>See All</Text>
-            </TouchableOpacity>
-          </View>
-          {filteredEvents.map((event) => (
-            <EventCard key={event.id} event={event} />
-          ))}
-        </View>
-
-        {/* Restaurant Picks */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Restaurant Picks</Text>
-            <TouchableOpacity activeOpacity={0.6}>
-              <Text style={styles.seeAll}>See All</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.restaurantScroll}
-          >
-            {RESTAURANT_PICKS.map((restaurant) => (
-              <RestaurantCard key={restaurant.id} restaurant={restaurant} />
-            ))}
-          </ScrollView>
-        </View>
+            {/* Restaurant Picks */}
+            {restaurantItems.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Restaurant Picks</Text>
+                  <TouchableOpacity activeOpacity={0.6} onPress={() => setActiveCategory("food")}>
+                    <Text style={styles.seeAll}>See All</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.restaurantScroll}
+                >
+                  {restaurantItems.slice(0, 6).map((item) => (
+                    <RestaurantCard key={item.id} item={item} />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </>
+        )}
 
         {/* Quick Plan CTA */}
-        <TouchableOpacity style={styles.quickPlanCta} activeOpacity={0.85}>
-          <View style={styles.ctaContent}>
-            <Text style={styles.ctaTitle}>Plan My Day</Text>
-            <Text style={styles.ctaDescription}>
-              Let NaviGator build a full itinerary based on your preferences and what's happening
-              nearby.
-            </Text>
-          </View>
-          <View style={styles.ctaArrow}>
-            <Text style={styles.ctaArrowText}>{">"}</Text>
-          </View>
-        </TouchableOpacity>
+        {!loading && !error && (
+          <TouchableOpacity style={styles.quickPlanCta} activeOpacity={0.85}>
+            <View style={styles.ctaContent}>
+              <Text style={styles.ctaTitle}>Plan My Day</Text>
+              <Text style={styles.ctaDescription}>
+                Let NaviGator build a full itinerary based on your preferences and what's nearby.
+              </Text>
+            </View>
+            <View style={styles.ctaArrow}>
+              <Text style={styles.ctaArrowText}>{">"}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         <View style={{ height: 28 }} />
       </ScrollView>
@@ -425,16 +395,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  notificationIcon: { fontWeight: "800", color: COLORS.foreground },
-  notificationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.secondary,
-    position: "absolute",
-    top: 10,
-    right: 10,
-  },
+  notificationIcon: { fontWeight: "800", color: COLORS.foreground, fontSize: 18 },
   avatar: {
     width: 44,
     height: 44,
@@ -510,50 +471,7 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 18, fontWeight: "900", color: COLORS.foreground },
   seeAll: { color: COLORS.primary, fontWeight: "800" },
-
-  // Featured Plans
-  featuredScroll: { paddingVertical: 14, paddingRight: 24 },
-  featuredCard: {
-    width: width * 0.78,
-    borderRadius: 18,
-    padding: 16,
-    marginRight: 16,
-    overflow: "hidden",
-  },
-  featuredBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.25)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginBottom: 10,
-  },
-  featuredBadgeText: { color: "#fff", fontWeight: "900" },
-  featuredContent: { gap: 6 },
-  featuredTitle: { color: "#fff", fontSize: 18, fontWeight: "900" },
-  featuredSubtitle: { color: "rgba(255,255,255,0.9)", fontWeight: "700" },
-  featuredMeta: { marginTop: 8, gap: 8 },
-  featuredMetaItem: { flexDirection: "row", alignItems: "center", gap: 8 },
-  featuredMetaIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    textAlign: "center",
-    lineHeight: 20,
-    color: "#fff",
-    fontWeight: "900",
-  },
-  featuredMetaText: { color: "rgba(255,255,255,0.95)", fontWeight: "700" },
-  featuredAction: {
-    marginTop: 12,
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.25)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  featuredActionText: { color: "#fff", fontWeight: "900" },
+  countText: { color: COLORS.muted, fontWeight: "700", fontSize: 13 },
 
   // Events
   eventCard: {
@@ -574,11 +492,10 @@ const styles = StyleSheet.create({
   ratingBadge: { backgroundColor: COLORS.inputBg, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   ratingText: { fontWeight: "900", color: COLORS.foreground },
   eventVenue: { color: COLORS.muted, fontWeight: "700" },
-  eventMeta: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  eventTime: { color: COLORS.foreground, fontWeight: "700" },
-  eventDot: { color: COLORS.muted, fontWeight: "900" },
+  eventMeta: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
   eventDistance: { color: COLORS.muted, fontWeight: "800" },
-  eventPrice: { color: COLORS.primary, fontWeight: "900" },
+  eventDot: { color: COLORS.muted },
+  eventExplanation: { color: COLORS.primary, fontWeight: "700", flex: 1 },
 
   // Restaurants
   restaurantScroll: { paddingVertical: 14, paddingRight: 24, gap: 12 },
@@ -598,9 +515,20 @@ const styles = StyleSheet.create({
   restaurantMeta: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
   restaurantRating: { fontWeight: "900", color: COLORS.foreground },
   restaurantPrice: { fontWeight: "900", color: COLORS.primary },
-  restaurantStatus: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { color: COLORS.muted, fontWeight: "800" },
+
+  // Loading / Error
+  centerState: { alignItems: "center", paddingVertical: 48, gap: 14 },
+  stateText: { color: COLORS.muted, fontWeight: "700" },
+  errorText: { color: "#E74C3C", fontWeight: "700", textAlign: "center", paddingHorizontal: 24 },
+  retryBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryText: { color: "#fff", fontWeight: "900" },
+  emptyState: { paddingVertical: 24, alignItems: "center" },
+  emptyText: { color: COLORS.muted, fontWeight: "700" },
 
   // CTA
   quickPlanCta: {
