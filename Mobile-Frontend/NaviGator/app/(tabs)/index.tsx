@@ -8,6 +8,7 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import * as Location from "expo-location";
 import { auth } from "../../firebaseConfig";
@@ -34,6 +35,54 @@ const CATEGORIES = [
   { id: "outdoors", label: "Outdoors" },
   { id: "arts", label: "Arts" },
 ];
+
+// ─── City Dictionary ────────────────────────────────────────────
+const CITY_COORDS: Record<string, { lat: number; lon: number; label: string }> = {
+  "gainesville":        { lat: 29.6516,  lon: -82.3248,  label: "Gainesville, FL" },
+  "gainesville, fl":    { lat: 29.6516,  lon: -82.3248,  label: "Gainesville, FL" },
+  "san francisco":      { lat: 37.7749,  lon: -122.4194, label: "San Francisco, CA" },
+  "san francisco, ca":  { lat: 37.7749,  lon: -122.4194, label: "San Francisco, CA" },
+  "irvine":             { lat: 33.6846,  lon: -117.8265, label: "Irvine, CA" },
+  "irvine, ca":         { lat: 33.6846,  lon: -117.8265, label: "Irvine, CA" },
+  "los angeles":        { lat: 34.0522,  lon: -118.2437, label: "Los Angeles, CA" },
+  "los angeles, ca":    { lat: 34.0522,  lon: -118.2437, label: "Los Angeles, CA" },
+  "la":                 { lat: 34.0522,  lon: -118.2437, label: "Los Angeles, CA" },
+  "new york":           { lat: 40.7128,  lon: -74.0060,  label: "New York, NY" },
+  "new york, ny":       { lat: 40.7128,  lon: -74.0060,  label: "New York, NY" },
+  "nyc":                { lat: 40.7128,  lon: -74.0060,  label: "New York, NY" },
+  "miami":              { lat: 25.7617,  lon: -80.1918,  label: "Miami, FL" },
+  "miami, fl":          { lat: 25.7617,  lon: -80.1918,  label: "Miami, FL" },
+  "chicago":            { lat: 41.8781,  lon: -87.6298,  label: "Chicago, IL" },
+  "chicago, il":        { lat: 41.8781,  lon: -87.6298,  label: "Chicago, IL" },
+  "austin":             { lat: 30.2672,  lon: -97.7431,  label: "Austin, TX" },
+  "austin, tx":         { lat: 30.2672,  lon: -97.7431,  label: "Austin, TX" },
+  "seattle":            { lat: 47.6062,  lon: -122.3321, label: "Seattle, WA" },
+  "seattle, wa":        { lat: 47.6062,  lon: -122.3321, label: "Seattle, WA" },
+  "orlando":            { lat: 28.5383,  lon: -81.3792,  label: "Orlando, FL" },
+  "orlando, fl":        { lat: 28.5383,  lon: -81.3792,  label: "Orlando, FL" },
+  "tampa":              { lat: 27.9506,  lon: -82.4572,  label: "Tampa, FL" },
+  "tampa, fl":          { lat: 27.9506,  lon: -82.4572,  label: "Tampa, FL" },
+  "san diego":          { lat: 32.7157,  lon: -117.1611, label: "San Diego, CA" },
+  "san diego, ca":      { lat: 32.7157,  lon: -117.1611, label: "San Diego, CA" },
+  "denver":             { lat: 39.7392,  lon: -104.9903, label: "Denver, CO" },
+  "denver, co":         { lat: 39.7392,  lon: -104.9903, label: "Denver, CO" },
+  "boston":             { lat: 42.3601,  lon: -71.0589,  label: "Boston, MA" },
+  "boston, ma":         { lat: 42.3601,  lon: -71.0589,  label: "Boston, MA" },
+  "nashville":          { lat: 36.1627,  lon: -86.7816,  label: "Nashville, TN" },
+  "nashville, tn":      { lat: 36.1627,  lon: -86.7816,  label: "Nashville, TN" },
+  "atlanta":            { lat: 33.7490,  lon: -84.3880,  label: "Atlanta, GA" },
+  "atlanta, ga":        { lat: 33.7490,  lon: -84.3880,  label: "Atlanta, GA" },
+  "portland":           { lat: 45.5051,  lon: -122.6750, label: "Portland, OR" },
+  "portland, or":       { lat: 45.5051,  lon: -122.6750, label: "Portland, OR" },
+  "houston":            { lat: 29.7604,  lon: -95.3698,  label: "Houston, TX" },
+  "houston, tx":        { lat: 29.7604,  lon: -95.3698,  label: "Houston, TX" },
+  "phoenix":            { lat: 33.4484,  lon: -112.0740, label: "Phoenix, AZ" },
+  "phoenix, az":        { lat: 33.4484,  lon: -112.0740, label: "Phoenix, AZ" },
+};
+
+function lookupCity(query: string): { lat: number; lon: number; label: string } | null {
+  return CITY_COORDS[query.trim().toLowerCase()] ?? null;
+}
 
 // ─── Helpers ────────────────────────────────────────────────────
 function getGreeting(): string {
@@ -159,39 +208,14 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locationName, setLocationName] = useState("Getting location...");
+  const [locationEditing, setLocationEditing] = useState(false);
+  const [locationInput, setLocationInput] = useState("");
   const [userName, setUserName] = useState("there");
 
-  const fetchData = useCallback(async () => {
+  const loadRecommendations = useCallback(async (lat: number, lon: number) => {
     setLoading(true);
     setError(null);
     try {
-      // Get user name
-      const user = auth.currentUser;
-      if (user?.displayName) {
-        setUserName(user.displayName.split(" ")[0]);
-      }
-
-      // Get location permission
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      let lat = 29.6516; // Gainesville, FL fallback
-      let lon = -82.3248;
-
-      if (status === "granted") {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = loc.coords.latitude;
-        lon = loc.coords.longitude;
-
-        // Reverse geocode for display
-        const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
-        if (place) {
-          const parts = [place.district ?? place.subregion, place.city].filter(Boolean);
-          setLocationName(parts.join(", ") || "Your Location");
-        }
-      } else {
-        setLocationName("Gainesville, FL");
-      }
-
-      // Fetch personalized recommendations
       const data = await apiService.getRecommendations(lat, lon, 20);
       const items: EventItem[] = (data.results ?? data.recommendations ?? []).map(toEventItem);
       setRecommendations(items);
@@ -201,6 +225,76 @@ export default function HomeScreen() {
       setLoading(false);
     }
   }, []);
+
+  const fetchData = useCallback(async () => {
+    setError(null);
+    try {
+      const user = auth.currentUser;
+      if (user?.displayName) {
+        setUserName(user.displayName.split(" ")[0]);
+      }
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let lat = 33.6846;
+      let lon = -117.8265;
+
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = loc.coords.latitude;
+        lon = loc.coords.longitude;
+        const [place] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        if (place) {
+          const parts = [place.district ?? place.subregion, place.city].filter(Boolean);
+          setLocationName(parts.join(", ") || "Your Location");
+        }
+      } else {
+        setLocationName("Irvine, CA");
+      }
+
+      await loadRecommendations(lat, lon);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load recommendations");
+      setLoading(false);
+    }
+  }, [loadRecommendations]);
+
+  const handleLocationSearch = useCallback(async () => {
+    const query = locationInput.trim();
+    if (!query) return;
+    Keyboard.dismiss();
+    setLocationEditing(false);
+    setLocationInput("");
+
+    // Check dictionary first
+    const known = lookupCity(query);
+    if (known) {
+      setLocationName(known.label);
+      await loadRecommendations(known.lat, known.lon);
+      return;
+    }
+
+    // Fall back to geocoding for unknown locations
+    setLocationName(query);
+    setLoading(true);
+    try {
+      const results = await Location.geocodeAsync(query);
+      if (results.length === 0) {
+        setError(`Location "${query}" not found. Try a city name or address.`);
+        setLoading(false);
+        return;
+      }
+      const { latitude, longitude } = results[0];
+      const [place] = await Location.reverseGeocodeAsync({ latitude, longitude });
+      if (place) {
+        const parts = [place.city, place.region].filter(Boolean);
+        setLocationName(parts.join(", ") || query);
+      }
+      await loadRecommendations(latitude, longitude);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to search location");
+      setLoading(false);
+    }
+  }, [locationInput, loadRecommendations]);
 
   useEffect(() => {
     fetchData();
@@ -244,11 +338,33 @@ export default function HomeScreen() {
         </View>
 
         {/* Location Bar */}
-        <TouchableOpacity style={styles.locationBar} activeOpacity={0.7} onPress={fetchData}>
-          <Text style={styles.locationIcon}>◎</Text>
-          <Text style={styles.locationText}>{locationName}</Text>
-          <Text style={styles.locationChevron}>{">"}</Text>
-        </TouchableOpacity>
+        {locationEditing ? (
+          <View style={[styles.locationBar, styles.locationBarEditing]}>
+            <Text style={styles.locationIcon}>◎</Text>
+            <TextInput
+              style={styles.locationInput}
+              value={locationInput}
+              onChangeText={setLocationInput}
+              placeholder="Enter city or address..."
+              placeholderTextColor={COLORS.muted}
+              autoFocus
+              returnKeyType="search"
+              onSubmitEditing={handleLocationSearch}
+            />
+            <TouchableOpacity onPress={handleLocationSearch} activeOpacity={0.7}>
+              <Text style={styles.locationSearchBtn}>Go</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setLocationEditing(false); setLocationInput(""); }} activeOpacity={0.7}>
+              <Text style={styles.locationCancelBtn}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.locationBar} activeOpacity={0.7} onPress={() => setLocationEditing(true)}>
+            <Text style={styles.locationIcon}>◎</Text>
+            <Text style={styles.locationText}>{locationName}</Text>
+            <Text style={styles.locationChevron}>✎</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -423,6 +539,10 @@ const styles = StyleSheet.create({
   locationIcon: { fontWeight: "900", color: COLORS.primary },
   locationText: { flex: 1, color: COLORS.foreground, fontWeight: "700" },
   locationChevron: { color: COLORS.muted, fontWeight: "900" },
+  locationBarEditing: { borderColor: COLORS.primary },
+  locationInput: { flex: 1, color: COLORS.foreground, fontWeight: "600" },
+  locationSearchBtn: { color: COLORS.primary, fontWeight: "900", paddingHorizontal: 6 },
+  locationCancelBtn: { color: COLORS.muted, fontWeight: "900", paddingHorizontal: 4 },
 
   // Search
   searchContainer: {
