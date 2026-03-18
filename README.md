@@ -33,28 +33,28 @@ NaviGator combines real-time location data, live weather conditions, and your pe
 ### Welcome Screen
 The opening page greets users and routes them into the sign-up or sign-in flow.
 
-![Welcome Screen](media/signup.png)
+<img src="media/signup.png" width="33%" alt="Welcome Screen" />
 
 ---
 
 ### Account Creation
 Users create their account with a first name, last name, email, and password — backed by Firebase Authentication.
 
-![Account Creation](media/account.png)
+<img src="media/account.png" width="33%" alt="Account Creation" />
 
 ---
 
 ### Profile & Preference Setup
 A multi-step onboarding wizard lets users select their food preferences, activity interests, nightlife categories, and budget tier. These preferences drive the personalized recommendation engine.
 
-![Profile Preferences](media/profile_making.png)
+<img src="media/profile_making.png" width="33%" alt="Profile Preferences" />
 
 ---
 
 ### Main Recommendations Feed
 After onboarding, users land on the home screen showing ranked recommendations based on their location, current weather, and saved preferences. Tabs filter by category: For You, Restaurants, Nightlife, Outdoors, and Arts.
 
-![Suggestions Feed](media/suggestions.png)
+<img src="media/suggestions.png" width="33%" alt="Suggestions Feed" />
 
 ---
 
